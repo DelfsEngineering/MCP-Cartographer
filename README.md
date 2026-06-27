@@ -4,7 +4,7 @@
 
 MCP Cartographer goes beyond a simple capability listing. It discovers tools, resources, and prompts from a live MCP endpoint, builds an interactive graph of how they relate, and scores how well an AI agent can actually *use* the server — surfacing weak descriptions, missing schemas, unclear side effects, and orphaned resources.
 
-![MCP Cartographer map view](docs/screenshot.png)
+![MCP Cartographer map view](docs/mcp-cartographer-map.png)
 
 ## Why MCP Cartographer?
 

@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #app {
+    height: 100%;
+  }
+}
+
+.vue-flow__node-carto {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.vue-flow__edge-path {
+  stroke-width: 2;
+}
+
+.vue-flow__pane {
+  cursor: grab;
+}
+
+.vue-flow__pane.dragging {
+  cursor: grabbing;
+}

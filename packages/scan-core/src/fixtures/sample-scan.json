@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "scan": {
+    "id": "scan-sample-001",
+    "serverName": "Demo Invoice MCP",
+    "status": "complete",
+    "progressPercent": 100,
+    "startedAt": "2026-06-27T12:00:00.000Z",
+    "completedAt": "2026-06-27T12:00:05.000Z"
+  },
+  "tools": [
+    {
+      "id": "tool-1",
+      "scanId": "scan-sample-001",
+      "name": "search_customer",
+      "description": "Search customers by name, email, or company. Returns a list of matching customer records.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search term" },
+          "limit": { "type": "integer", "default": 10 }
+        },
+        "required": ["query"]
+      },
+      "raw": { "name": "search_customer" },
+      "descriptionScore": 85,
+      "riskLevel": "none"
+    },
+    {
+      "id": "tool-2",
+      "scanId": "scan-sample-001",
+      "name": "get_customer",
+      "description": "Get a single customer by ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string" }
+        },
+        "required": ["customerId"]
+      },
+      "raw": { "name": "get_customer" },
+      "descriptionScore": 72,
+      "riskLevel": "none"
+    },
+    {
+      "id": "tool-3",
+      "scanId": "scan-sample-001",
+      "name": "create_invoice",
+      "description": "Creates invoice",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerId": { "type": "string" },
+          "lineItems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "description": { "type": "string" },
+                "amount": { "type": "number" }
+              }
+            }
+          }
+        },
+        "required": ["customerId", "lineItems"]
+      },
+      "raw": { "name": "create_invoice" },
+      "descriptionScore": 45,
+      "riskLevel": "medium"
+    },
+    {
+      "id": "tool-4",
+      "scanId": "scan-sample-001",
+      "name": "delete_invoice",
+      "description": "",
+      "raw": { "name": "delete_invoice" },
+      "riskLevel": "high"
+    }
+  ],
+  "resources": [
+    {
+      "id": "res-1",
+      "scanId": "scan-sample-001",
+      "uri": "docs://billing",
+      "name": "Billing documentation",
+      "description": "Guide for invoice creation, taxes, and payment terms.",
+      "mimeType": "text/markdown",
+      "contentPreview": "# Billing\n\nUse create_invoice after fetching the customer..."
+    },
+    {
+      "id": "res-2",
+      "scanId": "scan-sample-001",
+      "uri": "docs://customers",
+      "name": "Customer API docs",
+      "description": "Reference for customer search and retrieval.",
+      "mimeType": "text/markdown"
+    },
+    {
+      "id": "res-3",
+      "scanId": "scan-sample-001",
+      "uri": "docs://legacy-export",
+      "name": "Legacy export format",
+      "description": "Deprecated export schema — rarely used.",
+      "mimeType": "application/json"
+    }
+  ],
+  "prompts": [
+    {
+      "id": "prompt-1",
+      "scanId": "scan-sample-001",
+      "name": "onboard_support",
+      "description": "Helps support agents understand billing workflows.",
+      "arguments": [{ "name": "agentName", "required": true }],
+      "raw": { "name": "onboard_support" }
+    }
+  ],
+  "graph": { "nodes": [], "edges": [] },
+  "findings": []
+}

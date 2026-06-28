@@ -24,6 +24,23 @@ export type DiscoveredResource = {
   name?: string
   description?: string
   mimeType?: string
+  /** Truncated body from resources/read during scan (for guide link inference). */
+  contentPreview?: string
+  raw: unknown
+}
+
+export type McpDiscoveryOptions = {
+  /** Sample resource bodies during scan (default true, capped by maxResourcesToRead). */
+  readResourceBodies?: boolean
+  maxResourcesToRead?: number
+  maxResourceBodyChars?: number
+}
+
+export type DiscoveredResourceTemplate = {
+  uriTemplate: string
+  name?: string
+  description?: string
+  mimeType?: string
   raw: unknown
 }
 
@@ -36,9 +53,20 @@ export type DiscoveredPrompt = {
 
 export type McpDiscoveryResult = {
   serverInfo?: McpServerInfo
+  instructions?: string
   transportUsed: 'streamable-http' | 'sse'
   tools: DiscoveredTool[]
   resources: DiscoveredResource[]
+  resourceTemplates: DiscoveredResourceTemplate[]
+  prompts: DiscoveredPrompt[]
+}
+
+export type McpCapabilitiesSnapshot = {
+  serverInfo?: McpServerInfo
+  instructions?: string
+  tools: DiscoveredTool[]
+  resources: DiscoveredResource[]
+  resourceTemplates: DiscoveredResourceTemplate[]
   prompts: DiscoveredPrompt[]
 }
 
@@ -48,6 +76,7 @@ export type McpTestResult = {
   serverInfo?: McpServerInfo
   toolCount?: number
   resourceCount?: number
+  resourceTemplateCount?: number
   promptCount?: number
   error?: string
 }

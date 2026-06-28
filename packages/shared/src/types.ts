@@ -124,6 +124,22 @@ export type MCPPromptRecord = {
   summary?: string
 }
 
+export type MCPServerMeta = {
+  name?: string
+  version?: string
+  instructions?: string
+}
+
+export type MCPResourceTemplateRecord = {
+  id: string
+  scanId: string
+  uriTemplate: string
+  name?: string
+  description?: string
+  mimeType?: string
+  raw?: unknown
+}
+
 export type FindingCategory =
   | 'weak_description'
   | 'missing_docs'
@@ -165,8 +181,10 @@ export type ProbeResult = {
 export type ScanDocument = {
   version: 1
   scan: Scan
+  serverMeta?: MCPServerMeta
   tools: MCPToolRecord[]
   resources: MCPResourceRecord[]
+  resourceTemplates?: MCPResourceTemplateRecord[]
   prompts: MCPPromptRecord[]
   graph: {
     nodes: GraphNode[]
@@ -227,6 +245,6 @@ export type ChatUIAction =
   | { type: 'highlight_nodes'; nodeIds: string[] }
   | { type: 'focus_node'; nodeId: string }
   | { type: 'open_finding'; findingId: string }
-  | { type: 'switch_mode'; mode: 'map' | 'inspector' | 'audit' }
+  | { type: 'switch_mode'; mode: 'map' | 'inspector' | 'audit' | 'findings' }
 
 export type AppMode = 'overview' | 'map' | 'inspector' | 'tools' | 'resources' | 'prompts' | 'findings' | 'probes' | 'raw'

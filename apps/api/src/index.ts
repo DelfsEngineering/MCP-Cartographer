@@ -6,8 +6,10 @@ config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env')
 
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
-import { discoverMcpServer, testMcpConnection, type McpConnectionConfig } from '@mcp-cartographer/mcp-client'
+import { discoverMcpServer, testMcpConnection, readMcpResource, getMcpPrompt, type McpConnectionConfig } from '@mcp-cartographer/mcp-client'
 import { buildScanDocumentFromDiscovery, redactSecrets } from '@mcp-cartographer/scan-core'
+import { runAiChat, streamOpenAiChat, type StreamEvent } from './assistant/chat'
+import { parseChatBody } from './assistant/parse-chat-body'
 
 const PORT = Number(process.env.PORT ?? 3333)
 const isDev = process.env.NODE_ENV !== 'production'
@@ -127,6 +129,137 @@ app.post('/api/mcp/scan', async (request, reply) => {
     request.log.error({ err: redactSecrets(message) }, 'MCP scan failed')
     return reply.status(502).send({ ok: false, error: message })
   }
+})
+
+app.post('/api/mcp/read-resource', async (request, reply) => {
+  if (!request.body || typeof request.body !== 'object') {
+    return reply.status(400).send({ ok: false, error: 'Invalid request body' })
+  }
+  const b = request.body as Record<string, unknown>
+  const parsed = parseConnection(b)
+  if ('error' in parsed) {
+    return reply.status(400).send({ ok: false, error: parsed.error })
+  }
+  const uri = typeof b.uri === 'string' ? b.uri.trim() : ''
+  if (!uri) {
+    return reply.status(400).send({ ok: false, error: 'uri is required' })
+  }
+  const result = await readMcpResource(parsed, uri)
+  if (!result.ok) {
+    return reply.status(502).send({ ok: false, error: result.error, durationMs: result.durationMs })
+  }
+  return { ok: true, data: result.data, durationMs: result.durationMs }
+})
+
+app.post('/api/mcp/get-prompt', async (request, reply) => {
+  if (!request.body || typeof request.body !== 'object') {
+    return reply.status(400).send({ ok: false, error: 'Invalid request body' })
+  }
+  const b = request.body as Record<string, unknown>
+  const parsed = parseConnection(b)
+  if ('error' in parsed) {
+    return reply.status(400).send({ ok: false, error: parsed.error })
+  }
+  const name = typeof b.name === 'string' ? b.name.trim() : ''
+  if (!name) {
+    return reply.status(400).send({ ok: false, error: 'name is required' })
+  }
+  const rawArgs = b.arguments
+  const args: Record<string, string> = {}
+  if (rawArgs && typeof rawArgs === 'object') {
+    for (const [k, v] of Object.entries(rawArgs as Record<string, unknown>)) {
+      if (typeof v === 'string') args[k] = v
+    }
+  }
+  const result = await getMcpPrompt(parsed, name, args)
+  if (!result.ok) {
+    return reply.status(502).send({ ok: false, error: result.error, durationMs: result.durationMs })
+  }
+  return { ok: true, data: result.data, durationMs: result.durationMs }
+})
+
+app.post('/api/openai/validate', async (request, reply) => {
+  const body = request.body as { apiKey?: string } | undefined
+  const apiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : ''
+  if (!apiKey) {
+    return reply.status(400).send({ ok: false, error: 'apiKey is required' })
+  }
+  if (!apiKey.startsWith('sk-')) {
+    return reply.status(400).send({ ok: false, error: 'OpenAI API keys usually start with sk-' })
+  }
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/models', {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    })
+    if (res.ok) {
+      return { ok: true }
+    }
+    const errBody = await res.text()
+    const message = errBody.slice(0, 200) || res.statusText
+    request.log.info({ status: res.status }, 'OpenAI key validation failed')
+    return reply.status(502).send({
+      ok: false,
+      error: res.status === 401 ? 'Invalid API key' : `OpenAI returned ${res.status}: ${message}`,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return reply.status(502).send({ ok: false, error: message })
+  }
+})
+
+app.post('/api/ai/chat', async (request, reply) => {
+  const parsed = parseChatBody(request.body)
+  if (!parsed.ok) {
+    return reply.status(parsed.status).send({ ok: false, error: parsed.error })
+  }
+
+  const result = await runAiChat(parsed.request)
+  if (!result.ok) {
+    return reply.status(502).send(result)
+  }
+  return result
+})
+
+app.post('/api/ai/chat/stream', async (request, reply) => {
+  const parsed = parseChatBody(request.body)
+  if (!parsed.ok) {
+    return reply.status(parsed.status).send({ ok: false, error: parsed.error })
+  }
+
+  reply.hijack()
+  reply.raw.writeHead(200, {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+    'Transfer-Encoding': 'chunked',
+  })
+  reply.raw.flushHeaders?.()
+
+  const write = (event: StreamEvent) => {
+    if (reply.raw.writableEnded) return
+    reply.raw.write(`${JSON.stringify(event)}\n`)
+    const res = reply.raw as typeof reply.raw & { flush?: () => void }
+    res.flush?.()
+  }
+
+  const abortController = new AbortController()
+  // Abort only when the client disconnects mid-stream — not when the request body finishes.
+  const onClientClose = () => abortController.abort()
+  request.raw.on('aborted', onClientClose)
+  reply.raw.on('close', onClientClose)
+
+  let streamFailed = false
+  const result = await streamOpenAiChat(parsed.request, (event) => {
+    if (event.type === 'error') streamFailed = true
+    write(event)
+  }, abortController.signal)
+
+  if (!result.ok && result.error !== 'Request cancelled' && !streamFailed) {
+    write({ type: 'error', error: result.error })
+  }
+  reply.raw.end()
 })
 
 try {

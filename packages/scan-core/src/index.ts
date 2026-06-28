@@ -9,6 +9,7 @@ import type {
   VisualGraphNode,
 } from '@mcp-cartographer/shared'
 import sampleScanJson from './fixtures/sample-scan.json'
+import { buildResourceCatalog, inferResourceToResourceEdges } from './infer-resource-links.js'
 
 const MUTATING_PATTERNS = /\b(create|update|delete|remove|write|set|insert|drop|destroy|modify|patch|post|put)\b/i
 
@@ -122,12 +123,11 @@ export function buildGraphFromScan(doc: ScanDocument): { nodes: GraphNode[]; edg
     updatedAt: ts,
   })
 
-  const schemaNodes = new Map<string, string>()
-
   for (const tool of doc.tools) {
     const toolNodeId = `node-tool-${tool.id}`
     const isRisky = (tool.riskLevel && tool.riskLevel !== 'none') ||
       MUTATING_PATTERNS.test(tool.name)
+    const paramCount = schemaFieldCount(tool.inputSchema)
 
     nodes.push({
       id: toolNodeId,
@@ -138,7 +138,7 @@ export function buildGraphFromScan(doc: ScanDocument): { nodes: GraphNode[]; edg
       score: tool.descriptionScore,
       severity: isRisky ? 'medium' : undefined,
       raw: tool.raw,
-      metadata: { riskLevel: tool.riskLevel, isRisky },
+      metadata: { riskLevel: tool.riskLevel, isRisky, paramCount },
       createdAt: ts,
       updatedAt: ts,
     })
@@ -153,46 +153,6 @@ export function buildGraphFromScan(doc: ScanDocument): { nodes: GraphNode[]; edg
       inferredBy: 'mcp',
       createdAt: ts,
     })
-
-    if (tool.inputSchema) {
-      const schemaKey = JSON.stringify(tool.inputSchema)
-      let schemaNodeId = schemaNodes.get(schemaKey)
-      if (!schemaNodeId) {
-        schemaNodeId = `node-schema-${schemaNodes.size + 1}`
-        schemaNodes.set(schemaKey, schemaNodeId)
-        const fieldCount = schemaFieldCount(tool.inputSchema)
-        nodes.push({
-          id: schemaNodeId,
-          scanId,
-          type: 'schema',
-          label: `${tool.name}Input`,
-          description: fieldCount ? `${fieldCount} fields` : undefined,
-          raw: tool.inputSchema,
-          createdAt: ts,
-          updatedAt: ts,
-        })
-        edges.push({
-          id: `edge-exposes-schema-${schemaNodes.size}`,
-          scanId,
-          sourceNodeId: serverId,
-          targetNodeId: schemaNodeId,
-          type: 'exposes',
-          confidence: 1,
-          inferredBy: 'mcp',
-          createdAt: ts,
-        })
-      }
-      edges.push({
-        id: `edge-tool-schema-${tool.id}`,
-        scanId,
-        sourceNodeId: toolNodeId,
-        targetNodeId: schemaNodeId,
-        type: 'uses_schema',
-        confidence: 1,
-        inferredBy: 'mcp',
-        createdAt: ts,
-      })
-    }
   }
 
   for (const resource of doc.resources) {
@@ -238,6 +198,54 @@ export function buildGraphFromScan(doc: ScanDocument): { nodes: GraphNode[]; edg
     }
   }
 
+  for (const template of doc.resourceTemplates ?? []) {
+    const templateNodeId = `node-resource-template-${template.id}`
+    nodes.push({
+      id: templateNodeId,
+      scanId,
+      type: 'resource',
+      label: template.name ?? template.uriTemplate,
+      description: template.description ?? `Template: ${template.uriTemplate}`,
+      raw: template,
+      metadata: { uriTemplate: template.uriTemplate, isTemplate: true },
+      createdAt: ts,
+      updatedAt: ts,
+    })
+    edges.push({
+      id: `edge-exposes-template-${template.id}`,
+      scanId,
+      sourceNodeId: serverId,
+      targetNodeId: templateNodeId,
+      type: 'exposes',
+      confidence: 1,
+      inferredBy: 'mcp',
+      createdAt: ts,
+    })
+
+    for (const tool of doc.tools) {
+      const haystack = `${tool.name} ${tool.description ?? ''}`.toLowerCase()
+      const tpl = template.uriTemplate.toLowerCase()
+      const tplBase = tpl.split('{')[0]
+      if (
+        haystack.includes(tpl) ||
+        (tplBase.length > 4 && haystack.includes(tplBase)) ||
+        (template.name && haystack.includes(template.name.toLowerCase()))
+      ) {
+        edges.push({
+          id: `edge-tool-template-${tool.id}-${template.id}`,
+          scanId,
+          sourceNodeId: `node-tool-${tool.id}`,
+          targetNodeId: templateNodeId,
+          type: 'references',
+          confidence: 0.75,
+          inferredBy: 'deterministic',
+          explanation: 'Matched template URI/name in tool description',
+          createdAt: ts,
+        })
+      }
+    }
+  }
+
   for (const prompt of doc.prompts) {
     const promptNodeId = `node-prompt-${prompt.id}`
     nodes.push({
@@ -262,6 +270,23 @@ export function buildGraphFromScan(doc: ScanDocument): { nodes: GraphNode[]; edg
     })
   }
 
+  const catalog = buildResourceCatalog(doc)
+  edges.push(...inferResourceToResourceEdges(doc, catalog, serverId, ts))
+
+  // Incoming guide links count toward orphan detection (tool or guide references)
+  for (const edge of edges) {
+    if (edge.type !== 'references' && edge.type !== 'related_to' && edge.type !== 'documents') continue
+    const resourceId =
+      edge.targetNodeId.startsWith('node-resource-template-')
+        ? edge.targetNodeId.replace('node-resource-template-', '')
+        : edge.targetNodeId.startsWith('node-resource-')
+          ? edge.targetNodeId.replace('node-resource-', '')
+          : null
+    if (!resourceId) continue
+    const resource = doc.resources.find((r) => r.id === resourceId)
+    if (resource) resource.isOrphaned = false
+  }
+
   return { nodes, edges }
 }
 
@@ -269,7 +294,10 @@ export function enrichScanDocument(doc: ScanDocument): ScanDocument {
   const { nodes, edges } = buildGraphFromScan(doc)
 
   const linkedResourceIds = new Set(
-    edges.filter((e) => e.type === 'references').map((e) => e.targetNodeId),
+    edges
+      .filter((e) => e.type === 'references' || e.type === 'related_to' || e.type === 'documents')
+      .map((e) => e.targetNodeId)
+      .filter((id) => id.startsWith('node-resource-')),
   )
   const resources = doc.resources.map((r) => ({
     ...r,
@@ -312,7 +340,7 @@ export function enrichScanDocument(doc: ScanDocument): ScanDocument {
     }
   }
 
-  const schemaCount = nodes.filter((n) => n.type === 'schema').length
+  const schemaCount = doc.tools.filter((t) => t.inputSchema).length
   const score = computeReadinessScore(findings, doc.tools.length, doc.resources.length)
 
   return {
@@ -344,14 +372,27 @@ export function toVisualGraph(doc: ScanDocument): VisualGraph {
     }
   }
 
+  const guideLinkCount = new Map<string, number>()
+  for (const e of doc.graph.edges) {
+    if (e.type !== 'related_to' && e.type !== 'documents') continue
+    guideLinkCount.set(e.sourceNodeId, (guideLinkCount.get(e.sourceNodeId) ?? 0) + 1)
+    guideLinkCount.set(e.targetNodeId, (guideLinkCount.get(e.targetNodeId) ?? 0) + 1)
+  }
+
   const nodes: VisualGraphNode[] = doc.graph.nodes
-    .filter((n) => n.type !== 'finding')
+    .filter((n) => n.type !== 'finding' && n.type !== 'schema')
     .map((n) => {
       const isOrphaned = n.type === 'resource' && Boolean(n.metadata?.isOrphaned)
       const isRisky = n.type === 'tool' && Boolean(n.metadata?.isRisky)
+      const paramCount = n.type === 'tool' ? (n.metadata?.paramCount as number | undefined) : undefined
       const badges: string[] = []
       if (isOrphaned) badges.push('orphan')
       if (isRisky) badges.push('risk')
+      if (paramCount) badges.push(`${paramCount} params`)
+      const linkN = guideLinkCount.get(n.id)
+      if (linkN && (n.type === 'resource' || n.type === 'server' || n.type === 'prompt')) {
+        badges.push(`${linkN} links`)
+      }
 
       return {
         id: n.id,
@@ -370,8 +411,10 @@ export function toVisualGraph(doc: ScanDocument): VisualGraph {
       }
     })
 
+  const visibleIds = new Set(nodes.map((n) => n.id))
   const edges: VisualGraphEdge[] = doc.graph.edges
-    .filter((e) => e.type !== 'has_finding')
+    .filter((e) => e.type !== 'has_finding' && e.type !== 'uses_schema')
+    .filter((e) => visibleIds.has(e.sourceNodeId) && visibleIds.has(e.targetNodeId))
     .map((e) => ({
       id: e.id,
       source: e.sourceNodeId,
@@ -387,7 +430,7 @@ export function toVisualGraph(doc: ScanDocument): VisualGraph {
   const toolCount = summary?.tools ?? doc.tools.length
   const resourceCount = summary?.resources ?? doc.resources.length
   const promptCount = summary?.prompts ?? doc.prompts.length
-  const schemaCount = summary?.schemas ?? nodes.filter((n) => n.type === 'schema').length
+  const schemaCount = summary?.schemas ?? doc.tools.filter((t) => t.inputSchema).length
   const findingCount = summary?.findings ?? doc.findings.length
   const score = summary?.score ?? computeReadinessScore(doc.findings, doc.tools.length, doc.resources.length)
 
@@ -511,6 +554,8 @@ export function exportJsonReport(doc: ScanDocument): string {
 export const sampleScanDocument = enrichScanDocument(sampleScanJson as ScanDocument)
 
 export type RawMcpDiscovery = {
+  serverInfo?: { name?: string; version?: string }
+  instructions?: string
   tools: Array<{
     name: string
     description?: string
@@ -521,6 +566,14 @@ export type RawMcpDiscovery = {
   }>
   resources: Array<{
     uri: string
+    name?: string
+    description?: string
+    mimeType?: string
+    contentPreview?: string
+    raw: unknown
+  }>
+  resourceTemplates?: Array<{
+    uriTemplate: string
     name?: string
     description?: string
     mimeType?: string
@@ -556,6 +609,13 @@ export function buildScanDocumentFromDiscovery(
       startedAt: ts,
       currentStep: 'Discovering MCP capabilities',
     },
+    serverMeta: discovery.serverInfo || discovery.instructions
+      ? {
+          name: discovery.serverInfo?.name,
+          version: discovery.serverInfo?.version,
+          instructions: discovery.instructions,
+        }
+      : undefined,
     tools: discovery.tools.map((t, i) => ({
       id: slugId('tool', t.name, i),
       scanId,
@@ -571,6 +631,16 @@ export function buildScanDocumentFromDiscovery(
       id: slugId('res', r.uri, i),
       scanId,
       uri: r.uri,
+      name: r.name,
+      description: r.description,
+      mimeType: r.mimeType,
+      contentPreview: r.contentPreview,
+      raw: r.raw,
+    })),
+    resourceTemplates: (discovery.resourceTemplates ?? []).map((r, i) => ({
+      id: slugId('rtpl', r.uriTemplate, i),
+      scanId,
+      uriTemplate: r.uriTemplate,
       name: r.name,
       description: r.description,
       mimeType: r.mimeType,
@@ -590,3 +660,18 @@ export function buildScanDocumentFromDiscovery(
 
   return enrichScanDocument(doc)
 }
+
+export { ASSISTANT_SYSTEM_PROMPT, buildAssistantConnectionNote } from './assistant-prompt'
+export {
+  buildResourceCatalog,
+  extractGuideReferences,
+  inferResourceToResourceEdges,
+  resolveCatalogEntry,
+} from './infer-resource-links.js'
+export { slimScanForChat } from './slim-scan'
+export {
+  buildAssistantScanContext,
+  formatAssistantScanContext,
+  getSuggestedQuestions,
+  type AssistantScanContext,
+} from './assistant-context'

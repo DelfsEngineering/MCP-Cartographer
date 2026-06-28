@@ -20,6 +20,13 @@ const grouped = computed(() => {
 
 const score = computed(() => scan.scanDoc?.scan.summary?.score ?? 0)
 
+const severityIcons = {
+  high: 'fa-triangle-exclamation',
+  medium: 'fa-circle-exclamation',
+  low: 'fa-circle-check',
+  info: 'fa-circle-info',
+}
+
 const dimensions = computed(() => {
   const base = score.value
   return [
@@ -40,11 +47,17 @@ const dimensions = computed(() => {
     </div>
     <template v-else>
       <div class="max-w-3xl mx-auto">
-        <h2 class="text-lg font-semibold mb-4">Audit</h2>
+        <h2 class="text-lg font-semibold mb-4 inline-flex items-center gap-2">
+          <i class="fa-slab fa-regular fa-clipboard text-carto-muted" aria-hidden="true" />
+          <span>Audit</span>
+        </h2>
 
         <div class="grid grid-cols-2 gap-4 mb-8">
           <div class="rounded-xl border border-carto-border bg-carto-panel p-5 col-span-2 sm:col-span-1">
-            <p class="text-sm text-carto-muted">Overall score</p>
+            <p class="text-sm text-carto-muted inline-flex items-center gap-1.5">
+              <i class="fa-slab fa-regular fa-gauge" aria-hidden="true" />
+              <span>Overall score</span>
+            </p>
             <p class="text-4xl font-bold text-grape-600">{{ score }}/100</p>
           </div>
           <div class="rounded-xl border border-carto-border bg-carto-panel p-5 col-span-2 sm:col-span-1 space-y-2">
@@ -78,7 +91,10 @@ const dimensions = computed(() => {
                   'bg-green-100 text-green-700': sev === 'low',
                   'bg-blue-100 text-blue-700': sev === 'info',
                 }"
-              >{{ f.category.replace(/_/g, ' ') }}</span>
+              >
+                <i class="fa-slab fa-regular mr-1" :class="severityIcons[sev]" aria-hidden="true" />
+                {{ f.category.replace(/_/g, ' ') }}
+              </span>
             </div>
             <p class="font-medium">{{ f.title }}</p>
             <p class="text-sm text-carto-muted mt-1">{{ f.message }}</p>

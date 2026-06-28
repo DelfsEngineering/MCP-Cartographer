@@ -26,6 +26,7 @@ function copy() {
           class="text-sm px-3 py-1 rounded border border-carto-border hover:bg-carto-panelSoft"
           @click="copy"
         >
+          <i class="fa-slab fa-regular fa-copy mr-1.5" aria-hidden="true" />
           Copy
         </button>
       </div>

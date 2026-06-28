@@ -1,26 +1,110 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useScanStore } from '@/stores/scan'
-import { redactSecrets } from '@mcp-cartographer/scan-core'
+import CapabilityDetail from '@/components/inspector/CapabilityDetail.vue'
+
+const STORAGE_KEY = 'carto-detail-drawer-height'
+const MIN_HEIGHT = 120
+const MAX_HEIGHT_RATIO = 0.85
+const DEFAULT_HEIGHT = () => Math.min(Math.floor(window.innerHeight * 0.5), 384)
 
 const scan = useScanStore()
 
-const rawJson = computed(() => {
-  if (!scan.scanDoc) return ''
-  return redactSecrets(JSON.stringify(scan.scanDoc, null, 2))
+const finding = computed(() => scan.selectedFinding)
+const showCapability = computed(
+  () => scan.selectedNode && !finding.value && scan.selectedNode.type !== 'finding',
+)
+
+function loadHeight(): number {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const n = Number(raw)
+      if (!Number.isNaN(n)) return clampHeight(n)
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return DEFAULT_HEIGHT()
+}
+
+function clampHeight(height: number): number {
+  const max = Math.floor(window.innerHeight * MAX_HEIGHT_RATIO)
+  return Math.min(max, Math.max(MIN_HEIGHT, Math.round(height)))
+}
+
+const panelHeight = ref(DEFAULT_HEIGHT())
+
+function persistHeight() {
+  try {
+    localStorage.setItem(STORAGE_KEY, String(panelHeight.value))
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function onWindowResize() {
+  panelHeight.value = clampHeight(panelHeight.value)
+}
+
+onMounted(() => {
+  panelHeight.value = loadHeight()
+  window.addEventListener('resize', onWindowResize)
 })
 
-const node = computed(() => scan.selectedNode)
-const finding = computed(() => scan.selectedFinding)
+onUnmounted(() => {
+  window.removeEventListener('resize', onWindowResize)
+})
+
+let resizeStartY = 0
+let resizeStartHeight = 0
+
+function onResizeStart(event: MouseEvent) {
+  event.preventDefault()
+  resizeStartY = event.clientY
+  resizeStartHeight = panelHeight.value
+
+  const onMove = (moveEvent: MouseEvent) => {
+    const delta = resizeStartY - moveEvent.clientY
+    panelHeight.value = clampHeight(resizeStartHeight + delta)
+  }
+
+  const onEnd = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onEnd)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    persistHeight()
+  }
+
+  document.body.style.cursor = 'ns-resize'
+  document.body.style.userSelect = 'none'
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onEnd)
+}
 </script>
 
 <template>
   <div
-    v-if="node || finding"
-    class="shrink-0 border-t border-carto-border bg-carto-panel max-h-56 overflow-y-auto"
+    v-if="finding || showCapability"
+    class="shrink-0 flex flex-col bg-carto-panel border-t border-carto-border"
+    :style="{ height: `${panelHeight}px` }"
   >
-    <div class="px-4 py-3">
-      <template v-if="finding">
+    <div
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize inspector"
+      class="h-2.5 shrink-0 cursor-ns-resize flex items-center justify-center touch-none group hover:bg-carto-panelSoft active:bg-carto-panelSoft"
+      @mousedown="onResizeStart"
+    >
+      <div class="flex flex-col gap-0.5 items-center pointer-events-none" aria-hidden="true">
+        <span class="block w-10 h-0.5 rounded-full bg-carto-border group-hover:bg-carto-muted transition-colors" />
+        <span class="block w-10 h-0.5 rounded-full bg-carto-border group-hover:bg-carto-muted transition-colors" />
+      </div>
+    </div>
+
+    <div class="flex-1 min-h-0 overflow-hidden">
+      <div v-if="finding" class="h-full px-4 py-3 overflow-y-auto">
         <div class="flex items-start justify-between gap-2">
           <div>
             <span
@@ -38,31 +122,17 @@ const finding = computed(() => scan.selectedFinding)
               {{ finding.recommendation }}
             </p>
           </div>
-          <button type="button" class="text-carto-faint hover:text-carto-muted" @click="scan.clearSelection()">×</button>
+          <button
+            type="button"
+            class="text-carto-faint hover:text-carto-muted"
+            aria-label="Close finding detail"
+            @click="scan.clearSelection()"
+          >
+            <i class="fa-slab fa-regular fa-xmark" aria-hidden="true" />
+          </button>
         </div>
-      </template>
-      <template v-else-if="node">
-        <div class="flex items-start justify-between gap-2">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-xs uppercase text-carto-faint">{{ node.type }}</span>
-              <span
-                v-for="badge in node.badges"
-                :key="badge"
-                class="text-xs px-1.5 py-0.5 rounded bg-blaze-50 text-blaze-600"
-              >{{ badge }}</span>
-              <span v-if="node.score != null" class="text-xs text-carto-muted">Score {{ node.score }}</span>
-            </div>
-            <h3 class="font-medium mt-0.5">{{ node.label }}</h3>
-            <p v-if="node.subtitle" class="text-sm text-carto-muted mt-1">{{ node.subtitle }}</p>
-            <details v-if="node.raw" class="mt-2">
-              <summary class="text-xs text-carto-faint cursor-pointer">Raw data</summary>
-              <pre class="text-xs mt-1 p-2 bg-carto-panelSoft rounded overflow-x-auto max-h-24">{{ rawJson.slice(0, 500) }}…</pre>
-            </details>
-          </div>
-          <button type="button" class="text-carto-faint hover:text-carto-muted shrink-0" @click="scan.selectNode(null)">×</button>
-        </div>
-      </template>
+      </div>
+      <CapabilityDetail v-else />
     </div>
   </div>
 </template>

@@ -8,6 +8,10 @@
   }
 }
 
+.vue-flow {
+  overflow: hidden;
+}
+
 .vue-flow__node-carto {
   background: transparent !important;
   border: none !important;
@@ -25,4 +29,51 @@
 
 .vue-flow__pane.dragging {
   cursor: grabbing;
+}
+
+/* Chat streaming indicators */
+.thinking-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.thinking-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: #7c6b9e;
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes thinking-bounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.stream-cursor {
+  display: inline-block;
+  color: #7c6b9e;
+  animation: cursor-blink 0.9s step-end infinite;
+  margin-left: 1px;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }

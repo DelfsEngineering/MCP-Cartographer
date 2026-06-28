@@ -5,9 +5,17 @@ import type { VisualGraph, VisualGraphEdge, VisualGraphNode } from '@mcp-cartogr
 const NODE_WIDTH = 200
 const NODE_HEIGHT = 80
 
+type LayoutHighlight = {
+  selectedNodeId: string | null
+  nodeIds: Set<string>
+  edgeIds: Set<string>
+}
+
 export function layoutGraph(
   nodes: VisualGraphNode[],
   edges: VisualGraphEdge[],
+  savedPositions?: Record<string, { x: number; y: number }>,
+  highlight?: LayoutHighlight,
 ): { nodes: Node[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
@@ -26,15 +34,23 @@ export function layoutGraph(
   dagre.layout(g)
 
   const flowNodes: Node[] = nodes.map((node) => {
+    const saved = savedPositions?.[node.id]
     const pos = g.node(node.id)
     return {
       id: node.id,
       type: 'carto',
-      position: {
+      draggable: true,
+      position: saved ?? {
         x: (pos?.x ?? 0) - NODE_WIDTH / 2,
         y: (pos?.y ?? 0) - NODE_HEIGHT / 2,
       },
-      data: { visual: node },
+      data: {
+        visual: node,
+        isOneHopNeighbor:
+          highlight?.selectedNodeId != null
+          && node.id !== highlight.selectedNodeId
+          && highlight.nodeIds.has(node.id),
+      },
     }
   })
 
@@ -42,10 +58,13 @@ export function layoutGraph(
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: edge.inferredBy === 'ai' ? 'smoothstep' : 'default',
+    type: edge.type === 'related_to' ? 'smoothstep' : edge.inferredBy === 'ai' ? 'smoothstep' : 'default',
     animated: edge.inferredBy === 'ai',
-    label: edge.label,
-    style: edgeStyle(edge),
+    label: edge.type === 'related_to' ? 'relates' : edge.label,
+    style: {
+      ...edgeStyle(edge),
+      ...(highlight?.edgeIds.has(edge.id) ? highlightedEdgeStyle() : {}),
+    },
     labelStyle: { fontSize: 10, fill: '#756D64' },
     labelBgStyle: { fill: '#FBFAF7' },
   }))
@@ -54,6 +73,12 @@ export function layoutGraph(
 }
 
 function edgeStyle(edge: VisualGraphEdge): Record<string, string | number> {
+  if (edge.type === 'related_to') {
+    return { stroke: '#2563EB', strokeWidth: 2, strokeDasharray: '6 4' }
+  }
+  if (edge.type === 'documents' && edge.inferredBy === 'deterministic') {
+    return { stroke: '#9333EA', strokeWidth: 1.5, strokeDasharray: '4 3' }
+  }
   if (edge.type === 'writes_to' || edge.isSuggested) {
     return { stroke: '#F04B37', strokeDasharray: edge.isSuggested ? '4 4' : 'none' }
   }
@@ -64,6 +89,13 @@ function edgeStyle(edge: VisualGraphEdge): Record<string, string | number> {
     return { stroke: '#756D64' }
   }
   return { stroke: '#A99F94' }
+}
+
+function highlightedEdgeStyle(): Record<string, string | number> {
+  return {
+    stroke: '#7B5CFF',
+    strokeWidth: 3,
+  }
 }
 
 export function getNeighborhood(

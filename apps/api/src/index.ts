@@ -1,7 +1,7 @@
 import { config } from 'dotenv'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
-import { buildApp } from './app.js'
+import { buildApp } from './app'
 
 config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') })
 

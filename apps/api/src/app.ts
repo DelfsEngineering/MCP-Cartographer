@@ -8,8 +8,8 @@ import {
   type McpConnectionConfig,
 } from '@mcp-cartographer/mcp-client'
 import { buildScanDocumentFromDiscovery, redactSecrets } from '@mcp-cartographer/scan-core'
-import { runAiChat, streamOpenAiChat, type StreamEvent } from './assistant/chat.js'
-import { parseChatBody } from './assistant/parse-chat-body.js'
+import { runAiChat, streamOpenAiChat, type StreamEvent } from './assistant/chat'
+import { parseChatBody } from './assistant/parse-chat-body'
 
 const isDev = process.env.NODE_ENV !== 'production'
 

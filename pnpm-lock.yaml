@@ -11,6 +11,9 @@ importers:
       '@vercel/node':
         specifier: ^5.1.8
         version: 5.8.22(rollup@4.62.2)
+      esbuild:
+        specifier: ^0.25.5
+        version: 0.25.12
 
   apps/api:
     dependencies:

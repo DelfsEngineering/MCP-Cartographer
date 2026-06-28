@@ -9,7 +9,7 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/handler.mjs": {
+    "api/handler.cjs": {
       "maxDuration": 300,
       "memory": 1024
     }

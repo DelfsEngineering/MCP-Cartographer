@@ -5,8 +5,8 @@ import { fileURLToPath } from 'url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 await esbuild.build({
-  entryPoints: [resolve(root, 'api/index.ts')],
-  outfile: resolve(root, 'api/handler.cjs'),
+  entryPoints: [resolve(root, 'api/server.ts')],
+  outfile: resolve(root, 'api/_server.cjs'),
   bundle: true,
   platform: 'node',
   target: 'node20',
@@ -14,4 +14,4 @@ await esbuild.build({
   logLevel: 'info',
 })
 
-console.log('Bundled API handler → api/handler.cjs')
+console.log('Bundled API handler → api/_server.cjs')

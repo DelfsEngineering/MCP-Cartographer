@@ -1,0 +1,20 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { buildApp } from '../apps/api/src/app.js'
+
+let appPromise: ReturnType<typeof buildApp> | null = null
+
+async function getApp() {
+  if (!appPromise) appPromise = buildApp()
+  const app = await appPromise
+  await app.ready()
+  return app
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const app = await getApp()
+  app.server.emit('request', req, res)
+}
+
+export const config = {
+  maxDuration: 300,
+}

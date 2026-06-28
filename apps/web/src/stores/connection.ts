@@ -240,14 +240,11 @@ export const useConnectionStore = defineStore('connection', () => {
   }
 
   function saveConnection(): boolean {
-    if (!saveToLocalStorage.value) {
-      error.value = 'Enable “Save to localStorage” to store connections'
-      return false
-    }
     if (!formIsValid(form.value)) {
       error.value = 'Connection name and endpoint URL are required'
       return false
     }
+    saveToLocalStorage.value = true
     const { storage: next, connection } = upsertConnection(
       storage.value,
       form.value,
@@ -257,6 +254,9 @@ export const useConnectionStore = defineStore('connection', () => {
     activeConnectionId.value = connection.id
     statusMessage.value = `Saved “${connection.name}” for tenant “${activeTenant.value.name}”`
     error.value = null
+    const scanStore = useScanStore()
+    scanStore.setMode('overview')
+    closeModal()
     return true
   }
 
